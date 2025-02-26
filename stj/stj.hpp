@@ -1,7 +1,6 @@
 #pragma once
 
 #include"base.hpp"
-#include <malloc.h>
 
 namespace stj {
     namespace heap {
@@ -111,38 +110,72 @@ namespace stj {
             }
         };
 
-        static Slice<u8> malloc_alloc(void* /*ctx*/, usize size) {
-            if (size == 0) return {MiPtr<u8>(nullptr), 0};
-            
-            u8* ptr = static_cast<u8*>(::malloc(size));
-            if (ptr == nullptr) [[unlikely]] {
-                return {MiPtr<u8>(nullptr), 0};
+        
+        namespace c_allocator_impl
+        {
+            namespace extern_c {
+                #if defined(_WIN32) || defined(_WIN64)
+                    #if defined(myDLL_EXPORTS)
+                        extern "C" std::size_t __declspec(dllexport) _msize(void* memblock);
+                    #else
+                        extern "C" std::size_t __declspec(dllimport) _msize(void* memblock);
+                    #endif
+                #elif defined(__APPLE__)
+                    extern "C" std::size_t malloc_size(const void* ptr);
+                #elif defined(__FreeBSD__) || defined(__linux__)
+                    extern "C" std::size_t malloc_usable_size(const void* ptr);
+                #endif
             }
-            
-            return {MiPtr<u8>(ptr), size};
-        }
-
-        static bool malloc_resize(void* /*ctx*/, Slice<u8> buf, usize new_size) {
-            // TODO: is this really valid? can the usable size shrink if it is not allocated somehow?
-            return new_size <= malloc_usable_size(buf.ptr.raw_ptr);  
-        }
-
-        static void malloc_free(void* /*ctx*/, Slice<u8> buf) {
-            if (buf.ptr.raw_ptr != nullptr) {
-                ::free(buf.ptr.raw_ptr);
+        
+            inline std::size_t get_allocation_size(void* ptr) {
+                if (ptr == nullptr) return 0;
+                
+                #if defined(_WIN32) || defined(_WIN64)
+                    return extern_c::_msize(const_cast<void*>(ptr));
+                #elif defined(__APPLE__)
+                    return extern_c::malloc_size(ptr);
+                #elif defined(__FreeBSD__) || defined(__linux__)
+                    return extern_c::malloc_usable_size(ptr);
+                #else
+                    return 0;
+                #endif
             }
+
+            static Slice<u8> malloc_alloc(void* /*ctx*/, usize size) {
+                if (size == 0) return {MiPtr<u8>(nullptr), 0};
+                
+                u8* ptr = static_cast<u8*>(::malloc(size));
+                if (ptr == nullptr) [[unlikely]] {
+                    return {MiPtr<u8>(nullptr), 0};
+                }
+                
+                return {MiPtr<u8>(ptr), size};
+            }
+    
+            static bool malloc_resize(void* /*ctx*/, Slice<u8> buf, usize new_size) {
+                return new_size <= get_allocation_size(buf.ptr.raw_ptr);
+            }
+    
+            static void malloc_free(void* /*ctx*/, Slice<u8> buf) {
+                if (buf.ptr.raw_ptr != nullptr) {
+                    ::free(buf.ptr.raw_ptr);
+                }
+            }
+    
+            static const AllocatorVTable malloc_vtable = {
+                malloc_alloc,
+                malloc_resize,
+                malloc_free
+            };
+    
+
         }
-
-        static const AllocatorVTable malloc_vtable = {
-            malloc_alloc,
-            malloc_resize,
-            malloc_free
-        };
-
-        const Allocator malloc = {
+        
+        const Allocator c_allocator = {
             reinterpret_cast<void*>(1),
-            &malloc_vtable
+            &c_allocator_impl::malloc_vtable
         };
+
     }
 
     template <typename T>

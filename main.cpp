@@ -1,14 +1,15 @@
-#include"stj/base.hpp"
 #include"stj/stj.hpp"
 
 void foo(Slice<i32> items) {
+    usize sum = 0;
     for(size_t i = 0; i < items.len; i++) {
-        std::cout << "Value: " << items[i] << std::endl;
+        sum += items[i];
     }
+    std::cout << "sum: " << sum << std::endl;
 }
 
 int main() {
-    auto malloc = stj::heap::malloc;
+    auto malloc = stj::heap::c_allocator;
     
     auto slice = malloc.alloc<i32>(10);
     defer (free(slice.ptr.raw_ptr));
