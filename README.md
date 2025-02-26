@@ -1,5 +1,5 @@
-```cpp
 #include"stj/stj.hpp"
+#include <limits.h>
 
 void foo(Slice<i32> items) {
     usize sum = 0;
@@ -9,7 +9,25 @@ void foo(Slice<i32> items) {
     std::cout << "sum: " << sum << std::endl;
 }
 
-int main() {
+enum MathErr {
+    OverFlow,
+    UnderFlow,
+};
+
+Result<i64, MathErr> add(i32 a, i32 b) {
+    if (b > 0 && a > INT32_MAX - b) return MathErr::OverFlow;
+    if (b < 0 && a < INT32_MIN - b) return MathErr::UnderFlow;
+    return a + b;
+}
+
+enum Err {
+    FOO,
+    BAR,
+};
+
+Result<i32, Err, MathErr> bar() {
+    errscope
+
     auto malloc = stj::heap::c_allocator;
     
     auto slice = malloc.alloc<i32>(10);
@@ -27,14 +45,30 @@ int main() {
     list.append(malloc, 12);
     list.append(malloc, 11);
     list.append(malloc, 10);
-    list.append(malloc, 14);
-    list.append(malloc, 91);
+    list.append(malloc, 20);
+    list.append(malloc, 20);
+    list.append(malloc, 20);
     
+    list.pop(malloc);
+    list.pop(malloc);
+
     for(size_t i = 0; i < 10000; i++) {
         list.append(malloc, i);
     }
-    
+
     foo(list.items);
+
+    errdefer (std::cout << "out!" << std::endl);
+
+    std::cout << TRY(add(10, 12)) << std::endl;
+    
+    std::cout << TRY(add(INT32_MAX , 12)) << std::endl;
+
+    foo(list.items);
+
+    return 12;
 }
 
-```
+int main() {
+    (void) bar();
+}

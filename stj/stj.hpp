@@ -31,7 +31,6 @@ namespace stj {
             void (*free)(void* ctx, Slice<u8> buf);
         };
 
-        
         // Allocator interface
         struct Allocator {
             void* impl_data;
@@ -109,10 +108,8 @@ namespace stj {
                 }
             }
         };
-
         
-        namespace c_allocator_impl
-        {
+        namespace c_allocator_impl {
             namespace extern_c {
                 #if defined(_WIN32) || defined(_WIN64)
                     #if defined(myDLL_EXPORTS)
@@ -167,15 +164,12 @@ namespace stj {
                 malloc_resize,
                 malloc_free
             };
-    
-
         }
         
         const Allocator c_allocator = {
-            reinterpret_cast<void*>(1),
+            reinterpret_cast<void*>(1), // TODO
             &c_allocator_impl::malloc_vtable
         };
-
     }
 
     template <typename T>
@@ -215,6 +209,18 @@ namespace stj {
             items = items.ptr.slice(0, items.len + 1);
             items[items.len - 1] = item;
             return;
+        }
+
+        T pop(heap::Allocator alloc) {
+            if (items.len < capacity/4) {
+                usize new_capacity = capacity/2;
+                Slice<T> buff = alloc.realloc(items.ptr.slice(0, capacity), new_capacity);
+                items = buff.slice(0, new_capacity);
+            }
+
+            T result = items[items.len - 1];
+            items = items.slice(0, items.len - 1);
+            return result;
         }
     };
 }
