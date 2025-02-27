@@ -78,8 +78,10 @@ private:
     
     template <typename E>
     static constexpr TagType getTagForType() {
-        static_assert(contains_type<E, Enums...>::value, 
-                     "Type not in the list of supported enum types");
+        static_assert(
+            contains_type<E, Enums...>::value, 
+            "Type not in the list of supported enum types"
+        );
         return static_cast<TagType>(index_of<E, Enums...>::value + 2);
     }
 
@@ -102,8 +104,10 @@ public:
     
     template <typename... OtherEnums>
     Error(const Error<OtherEnums...>& other) : tag(INVALID_TAG) {
-        static_assert((contains_type<OtherEnums, Enums...>::value && ...), 
-                    "Target Error type must include all enum types from source Error");
+        static_assert(
+            (contains_type<OtherEnums, Enums...>::value && ...), 
+            "Target Error type must include all enum types from source Error"
+        );
 
         if (other.isEmpty()) {
             return;
@@ -175,8 +179,10 @@ class Result {
     
     template <typename E>
     static constexpr TagType getTagForType() {
-        static_assert(contains_type<E, Enums...>::value, 
-                     "Type not in the list of supported enum types");
+        static_assert(
+            contains_type<E, Enums...>::value, 
+            "Type not in the list of supported enum types"
+        );
         return static_cast<TagType>(index_of<E, Enums...>::value + 2);
     }
 
@@ -190,25 +196,23 @@ class Result {
         }
     }
 public:
-    // Default constructor
     Result() : tag(INVALID_TAG) {}
     
-    // Value constructor
     Result(const T value) : tag(VALUE_TAG) {
         storage.value = value;
     }
     
-    // Error constructor
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
     Result(E error) : tag(getTagForType<E>()) {
         *reinterpret_cast<E*>(storage.errorStorage) = error;
     }
 
-    template <typename U, typename... OtherEnums, 
-          typename = std::enable_if_t<std::is_convertible_v<U, T>>>
+    template <typename U, typename... OtherEnums, typename = std::enable_if_t<std::is_convertible_v<U, T>>>
     Result(const Result<U, OtherEnums...>& other) : tag(INVALID_TAG) {
-        static_assert((contains_type<OtherEnums, Enums...>::value && ...), 
-                    "Target Result type must include all enum types from source Result");
+        static_assert(
+            (contains_type<OtherEnums, Enums...>::value && ...), 
+            "Target Result type must include all enum types from source Result"
+        );
         
         if (other.isEmpty()) {
             return;
@@ -252,6 +256,7 @@ public:
         if (tag != VALUE_TAG) {
             PANIC("Result does not contain a value");
         }
+        
         return storage.value;
     }
     
@@ -312,17 +317,30 @@ privDefer<F> errdefer_func(F f) {
 // single item ptr ====
 template <typename T>
 class Ptr {
+private:
+    struct PrivateTag {};
+    Ptr(T* p, PrivateTag) : raw_ptr(p) {} // workaround for creating a Ptr with a nullptr for undefined
 public:
+    // TODO support void pointer
     T* raw_ptr;
-
+    
     Ptr(T* p) : raw_ptr(p) {
         if (p == nullptr) {
             PANIC("Cannot initialize Ptr with nullptr");
         }
     }
+    
+    static Ptr<T> undefined() {
+        return Ptr<T>(nullptr, PrivateTag{});
+    }
 
     T& v() const {
         return *raw_ptr;
+    }
+    
+    template <typename... Args>
+    auto operator()(Args&&... args) const -> decltype((*raw_ptr)(std::forward<Args>(args)...)) {
+        return (*raw_ptr)(std::forward<Args>(args)...);
     }
 };
 // ==== single item ptr
@@ -333,6 +351,9 @@ template <typename T> struct Slice;
 // many items pointer ====
 template <typename T>
 class MiPtr {
+private:
+    struct PrivateTag {};
+    MiPtr(T* p, PrivateTag) : raw_ptr(p) {} // workaround for creating a Ptr with a nullptr for undefined
 public:
     T* raw_ptr;
 
@@ -340,6 +361,10 @@ public:
         if (p == nullptr) [[unlikely]] {
             PANIC("Cannot initialize MiPtr with nullptr");
         }
+    }
+
+    static MiPtr<T> undefined() {
+        return MiPtr<T>(nullptr, PrivateTag{});
     }
     
     T& operator[] (usize index) {
@@ -374,8 +399,7 @@ struct Slice {
     }
 
     static Slice empty() {
-        static T dummy_value; // TODO: Yuck?
-        return Slice{MiPtr<T>(&dummy_value), 0};
+        return Slice{MiPtr<T>::undefined(), 0};
     }
 
     Slice<T> slice(usize start, usize end) {

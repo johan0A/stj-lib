@@ -25,9 +25,7 @@ enum Err {
     BAR,
 };
 
-Result<i32, Err, MathErr> bar() {
-    errscope
-
+Result<i32, Err, MathErr> bar() { errscope
     auto malloc = stj::heap::c_allocator;
     
     auto slice = malloc.alloc<i32>(10);
@@ -44,14 +42,12 @@ Result<i32, Err, MathErr> bar() {
 
     list.append(malloc, 12);
     list.append(malloc, 11);
-    list.append(malloc, 10);
     list.append(malloc, 20);
     list.append(malloc, 20);
     list.append(malloc, 20);
     
     list.pop(malloc);
     list.pop(malloc);
-
 
     for(size_t i = 0; i < 10000; i++) {
         list.append(malloc, i);

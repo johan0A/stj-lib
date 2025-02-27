@@ -7,7 +7,7 @@ namespace stj {
         struct AllocatorVTable {
             /// Attempt to allocate exactly `len` bytes.
             ///
-            Slice<u8> (*alloc)(void* ctx, usize len);
+            Ptr<Slice<u8>(void* ctx, usize len)> alloc;
 
             /// Attempt to expand or shrink memory in place. `buf.len` must equal the
             /// length requested from the most recent successful call to `alloc` or
@@ -21,14 +21,14 @@ namespace stj {
             ///
             /// `new_len` must be greater than zero.
             ///
-            bool (*resize)(void* ctx, Slice<u8> buf, usize new_len);
+            Ptr<bool(void* ctx, Slice<u8> buf, usize new_len)> resize;
 
             /// Free and invalidate a buffer.
             ///
             /// `buf.len` must equal the most recent length returned by `alloc` or
             /// given to a successful `resize` call.
             ///
-            void (*free)(void* ctx, Slice<u8> buf);
+            Ptr<void(void* ctx, Slice<u8> buf)> free;
         };
 
         // Allocator interface
@@ -40,6 +40,7 @@ namespace stj {
             template <typename T>
             Slice<T> alloc(usize count) {
                 usize byte_size = count * sizeof(T);
+                // Slice<u8> bytes = vtable.alloc(impl_data, byte_size);
                 Slice<u8> bytes = vtable->alloc(impl_data, byte_size);
                 if (bytes.len == 0) [[unlikely]] {
                     PANIC("Memory allocation failed");
@@ -51,7 +52,7 @@ namespace stj {
             template <typename T>
             void free(Slice<T> slice) {
                 Slice<u8> bytes{
-                    MiPtr<u8>(reinterpret_cast<u8*>(slice.ptr.raw_ptr)), 
+                    MiPtr<u8>(reinterpret_cast<u8*>(slice.ptr.raw_ptr)), // TODO: make a cast function for Ptr<>?
                     slice.len * sizeof(T)
                 };
                 vtable->free(impl_data, bytes);
@@ -61,7 +62,7 @@ namespace stj {
             template <typename T>
             Ptr<T> create() {
                 Slice<T> memory = alloc<T>(1);
-                return Ptr<T>(memory.ptr.raw_ptr);
+                return memory.ptr;
             }
             
             // Destroy a single item
@@ -154,9 +155,7 @@ namespace stj {
             }
     
             static void malloc_free(void* /*ctx*/, Slice<u8> buf) {
-                if (buf.ptr.raw_ptr != nullptr) {
-                    ::free(buf.ptr.raw_ptr);
-                }
+                ::free(buf.ptr.raw_ptr);
             }
     
             static const AllocatorVTable malloc_vtable = {
@@ -167,7 +166,7 @@ namespace stj {
         }
         
         const Allocator c_allocator = {
-            reinterpret_cast<void*>(1), // TODO
+            nullptr,
             &c_allocator_impl::malloc_vtable
         };
     }
