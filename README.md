@@ -1,3 +1,4 @@
+```c++
 #include"stj/stj.hpp"
 #include <limits.h>
 
@@ -72,3 +73,4 @@ Result<i32, Err, MathErr> bar() {
 int main() {
     (void) bar();
 }
+```
