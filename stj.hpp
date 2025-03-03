@@ -7,7 +7,7 @@
 // TODO: clean the namespace
 
 namespace __stj_basic_impl {
-    bool error = false; 
+    thread_local bool error = false; 
 }
 
 // TODO: new safe int type
