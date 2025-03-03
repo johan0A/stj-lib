@@ -1,4 +1,4 @@
-#include"stj/stj.hpp"
+#include"stj.hpp"
 #include <limits.h>
 
 void foo(Slice<i32> items) {
@@ -25,7 +25,7 @@ enum Err {
     BAR,
 };
 
-Result<i32, Err, MathErr> bar() { errscope
+Result<i32, Err, MathErr> bar() {
     auto malloc = stj::heap::c_allocator;
     
     auto slice = malloc.alloc<i32>(10);
