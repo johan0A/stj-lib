@@ -1,5 +1,5 @@
 ```c++
-#include"stj/stj.hpp"
+#include"stj.hpp"
 #include <limits.h>
 
 void foo(Slice<i32> items) {
@@ -27,8 +27,6 @@ enum Err {
 };
 
 Result<i32, Err, MathErr> bar() {
-    errscope
-
     auto malloc = stj::heap::c_allocator;
     
     auto slice = malloc.alloc<i32>(10);
@@ -45,7 +43,6 @@ Result<i32, Err, MathErr> bar() {
 
     list.append(malloc, 12);
     list.append(malloc, 11);
-    list.append(malloc, 10);
     list.append(malloc, 20);
     list.append(malloc, 20);
     list.append(malloc, 20);
