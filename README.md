@@ -1,13 +1,11 @@
 ```c++
 #include"stj.hpp"
-#include <limits.h>
 
 void foo(Slice<i32> items) {
     usize sum = 0;
-    for(size_t i = 0; i < items.len; i++) {
+    for(usize i = 0; i < items.len; i++) {
         sum += items[i];
     }
-    std::cout << "sum: " << sum << std::endl;
 }
 
 enum MathErr {
@@ -16,8 +14,8 @@ enum MathErr {
 };
 
 Result<i64, MathErr> add(i32 a, i32 b) {
-    if (b > 0 && a > INT32_MAX - b) return MathErr::OverFlow;
-    if (b < 0 && a < INT32_MIN - b) return MathErr::UnderFlow;
+    if (b > 0 && a > 1000 - b) return MathErr::OverFlow;
+    if (b < 0 && a < -1000 - b) return MathErr::UnderFlow;
     return a + b;
 }
 
@@ -32,7 +30,7 @@ Result<i32, Err, MathErr> bar() {
     auto slice = malloc.alloc<i32>(10);
     defer (free(slice.ptr.raw_ptr));
 
-    for(size_t i = 0; i < slice.len; i++) {
+    for(usize i = 0; i < slice.len; i++) {
         slice[i] = i;
     }
     
@@ -50,17 +48,16 @@ Result<i32, Err, MathErr> bar() {
     list.pop(malloc);
     list.pop(malloc);
 
-    for(size_t i = 0; i < 10000; i++) {
+    for(usize i = 0; i < 10000; i++) {
         list.append(malloc, i);
     }
 
     foo(list.items);
 
-    errdefer (std::cout << "out!" << std::endl);
-
-    std::cout << TRY(add(10, 12)) << std::endl;
+    errdefer (stj::println("out!"));
     
-    std::cout << TRY(add(INT32_MAX , 12)) << std::endl;
+    stj::print("sum: %d\n", TRY(add(10, 12)));
+    stj::print("sum: %d\n", TRY(add(INT32_MAX , 12)));
 
     foo(list.items);
 

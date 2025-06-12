@@ -1,38 +1,379 @@
 #pragma once
 
-// TODO: not depend on iostream
-#include <iostream>
+
+// TODO: remove
 #include <cstdint>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <type_traits>
+#include <limits> 
+#include <algorithm>
+#include <utility>
 
 // TODO: clean the namespace
-
 namespace __stj_basic_impl {
     thread_local bool error = false; 
 }
 
-// TODO: new safe int type
-// TODO: not depend on cstdint
-using u8 = std::uint8_t;
-using i8 = std::int8_t;
-
-using u16 = std::uint16_t;
-using i16 = std::int16_t;
-
-using u32 = std::uint32_t;
-using i32 = std::int32_t;
-
-using u64 = std::uint64_t;
-using i64 = std::int64_t;
-
-using usize = std::size_t;
-using isize = std::ptrdiff_t;
-
 // panic ===
 #define PANIC(msg) do { \
-    std::cerr << "Panic at " << __FILE__ << ":" << __LINE__ << ": " << msg << " \n"; \
+    std::fprintf(stderr, "Panic at %s:%d: %s\n", __FILE__, __LINE__, msg); \
     std::abort(); \
 } while(0)
 // === panic
+
+// SafeInt ====
+template <typename T>
+class SafeInt {
+private:
+    static_assert(std::is_integral_v<T>, "SafeInt can only wrap integral types");
+    T value;
+
+    static bool add_overflow(T a, T b, T& result) {
+        if constexpr (std::is_unsigned_v<T>) {
+            result = a + b;
+            return result < a;
+        } else {
+            if (b > 0 && a > std::numeric_limits<T>::max() - b) return true;
+            if (b < 0 && a < std::numeric_limits<T>::min() - b) return true;
+            result = a + b;
+            return false;
+        }
+    }
+
+    static bool sub_overflow(T a, T b, T& result) {
+        if constexpr (std::is_unsigned_v<T>) {
+            result = a - b;
+            return a < b;
+        } else {
+            if (b < 0 && a > std::numeric_limits<T>::max() + b) return true;
+            if (b > 0 && a < std::numeric_limits<T>::min() + b) return true;
+            result = a - b;
+            return false;
+        }
+    }
+
+    static bool mul_overflow(T a, T b, T& result) {
+        if constexpr (std::is_unsigned_v<T>) {
+            if (a == 0 || b == 0) {
+                result = 0;
+                return false;
+            }
+            result = a * b;
+            return result / a != b;
+        } else {
+            if (a == 0 || b == 0) {
+                result = 0;
+                return false;
+            }
+            if (a == -1 && b == std::numeric_limits<T>::min()) return true;
+            if (b == -1 && a == std::numeric_limits<T>::min()) return true;
+            
+            T max = std::numeric_limits<T>::max();
+            T min = std::numeric_limits<T>::min();
+            
+            if (a > 0 && b > 0 && a > max / b) return true;
+            if (a < 0 && b < 0 && a < max / b) return true;
+            if (a > 0 && b < 0 && b < min / a) return true;
+            if (a < 0 && b > 0 && a < min / b) return true;
+            
+            result = a * b;
+            return false;
+        }
+    }
+
+public:
+    SafeInt() : value(0) {}
+    SafeInt(T val) : value(val) {}
+
+    template <typename U, typename = std::enable_if_t<std::is_integral_v<U>>>
+    SafeInt(U val) : value(static_cast<T>(val)) {
+        if (static_cast<U>(static_cast<T>(val)) != val) {
+            PANIC("Integer conversion overflow");
+        }
+    }
+
+    template <typename U>
+    SafeInt(const SafeInt<U>& other) : value(static_cast<T>(other.raw())) {
+        if (static_cast<U>(static_cast<T>(other.raw())) != other.raw()) {
+            PANIC("Integer conversion overflow");
+        }
+    }
+
+    operator T() const { return value; }
+
+    T raw() const { return value; }
+
+    SafeInt operator+(const SafeInt& other) const {
+        T result;
+        if (add_overflow(value, other.value, result)) {
+            PANIC("Integer overflow in addition");
+        }
+        return SafeInt(result);
+    }
+
+    SafeInt operator-(const SafeInt& other) const {
+        T result;
+        if (sub_overflow(value, other.value, result)) {
+            PANIC("Integer underflow in subtraction");
+        }
+        return SafeInt(result);
+    }
+
+    SafeInt operator*(const SafeInt& other) const {
+        T result;
+        if (mul_overflow(value, other.value, result)) {
+            PANIC("Integer overflow in multiplication");
+        }
+        return SafeInt(result);
+    }
+
+    SafeInt operator/(const SafeInt& other) const {
+        if (other.value == 0) {
+            PANIC("Division by zero");
+        }
+        if constexpr (std::is_signed_v<T>) {
+            if (value == std::numeric_limits<T>::min() && other.value == -1) {
+                PANIC("Integer overflow in division");
+            }
+        }
+        return SafeInt(value / other.value);
+    }
+
+    SafeInt operator%(const SafeInt& other) const {
+        if (other.value == 0) {
+            PANIC("Modulo by zero");
+        }
+        if constexpr (std::is_signed_v<T>) {
+            if (value == std::numeric_limits<T>::min() && other.value == -1) {
+                return SafeInt(0);
+            }
+        }
+        return SafeInt(value % other.value);
+    }
+
+    template <typename U>
+    auto operator+(const U& other) const -> SafeInt<decltype(value + U{})> {
+        using ResultType = decltype(value + U{});
+        return SafeInt<ResultType>(value) + SafeInt<ResultType>(other);
+    }
+
+    template <typename U>
+    auto operator-(const U& other) const -> SafeInt<decltype(value - U{})> {
+        using ResultType = decltype(value - U{});
+        return SafeInt<ResultType>(value) - SafeInt<ResultType>(other);
+    }
+
+    template <typename U>
+    auto operator*(const U& other) const -> SafeInt<decltype(value * U{})> {
+        using ResultType = decltype(value * U{});
+        return SafeInt<ResultType>(value) * SafeInt<ResultType>(other);
+    }
+
+    template <typename U>
+    auto operator/(const U& other) const -> SafeInt<decltype(value / U{})> {
+        using ResultType = decltype(value / U{});
+        return SafeInt<ResultType>(value) / SafeInt<ResultType>(other);
+    }
+
+    template <typename U>
+    auto operator%(const U& other) const -> SafeInt<decltype(value % U{})> {
+        using ResultType = decltype(value % U{});
+        return SafeInt<ResultType>(value) % SafeInt<ResultType>(other);
+    }
+
+    SafeInt operator-() const {
+        if constexpr (std::is_signed_v<T>) {
+            if (value == std::numeric_limits<T>::min()) {
+                PANIC("Integer overflow in negation");
+            }
+            return SafeInt(-value);
+        } else {
+            PANIC("Cannot negate unsigned integer");
+        }
+    }
+
+    SafeInt& operator+=(const SafeInt& other) {
+        T result;
+        if (add_overflow(value, other.value, result)) {
+            PANIC("Integer overflow in addition");
+        }
+        value = result;
+        return *this;
+    }
+
+    SafeInt& operator-=(const SafeInt& other) {
+        T result;
+        if (sub_overflow(value, other.value, result)) {
+            PANIC("Integer underflow in subtraction");
+        }
+        value = result;
+        return *this;
+    }
+
+    SafeInt& operator*=(const SafeInt& other) {
+        T result;
+        if (mul_overflow(value, other.value, result)) {
+            PANIC("Integer overflow in multiplication");
+        }
+        value = result;
+        return *this;
+    }
+
+    SafeInt& operator/=(const SafeInt& other) {
+        *this = *this / other;
+        return *this;
+    }
+
+    SafeInt& operator%=(const SafeInt& other) {
+        *this = *this % other;
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator+=(const U& other) {
+        *this = SafeInt(*this + other);
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator-=(const U& other) {
+        *this = SafeInt(*this - other);
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator*=(const U& other) {
+        *this = SafeInt(*this * other);
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator/=(const U& other) {
+        *this = SafeInt(*this / other);
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator%=(const U& other) {
+        *this = SafeInt(*this % other);
+        return *this;
+    }
+
+    template <typename U>
+    SafeInt& operator=(const U& other) {
+        *this = SafeInt(other);
+        return *this;
+    }
+
+    SafeInt& operator++() {
+        T result;
+        if (add_overflow(value, T(1), result)) {
+            PANIC("Integer overflow in increment");
+        }
+        value = result;
+        return *this;
+    }
+
+    SafeInt operator++(int) {
+        SafeInt old = *this;
+        ++(*this);
+        return old;
+    }
+
+    SafeInt& operator--() {
+        T result;
+        if (sub_overflow(value, T(1), result)) {
+            PANIC("Integer underflow in decrement");
+        }
+        value = result;
+        return *this;
+    }
+
+    SafeInt operator--(int) {
+        SafeInt old = *this;
+        --(*this);
+        return old;
+    }
+
+    bool operator==(const SafeInt& other) const { return value == other.value; }
+    bool operator!=(const SafeInt& other) const { return value != other.value; }
+    bool operator<(const SafeInt& other) const { return value < other.value; }
+    bool operator<=(const SafeInt& other) const { return value <= other.value; }
+    bool operator>(const SafeInt& other) const { return value > other.value; }
+    bool operator>=(const SafeInt& other) const { return value >= other.value; }
+
+    template <typename U>
+    bool operator==(const U& other) const { return value == other; }
+    
+    template <typename U>
+    bool operator!=(const U& other) const { return value != other; }
+    
+    template <typename U>
+    bool operator<(const U& other) const { return value < other; }
+    
+    template <typename U>
+    bool operator<=(const U& other) const { return value <= other; }
+    
+    template <typename U>
+    bool operator>(const U& other) const { return value > other; }
+    
+    template <typename U>
+    bool operator>=(const U& other) const { return value >= other; }
+
+    SafeInt operator&(const SafeInt& other) const { return SafeInt(value & other.value); }
+    SafeInt operator|(const SafeInt& other) const { return SafeInt(value | other.value); }
+    SafeInt operator^(const SafeInt& other) const { return SafeInt(value ^ other.value); }
+    SafeInt operator~() const { return SafeInt(~value); }
+    
+    SafeInt operator<<(const SafeInt& shift) const {
+        if (shift.value < 0 || shift.value >= static_cast<T>(sizeof(T) * 8)) {
+            PANIC("Invalid shift amount");
+        }
+        if (shift.value > 0) {
+            T max_shift = static_cast<T>(sizeof(T) * 8 - 1);
+            if constexpr (std::is_unsigned_v<T>) {
+                if (value > (std::numeric_limits<T>::max() >> shift.value)) {
+                    PANIC("Integer overflow in left shift");
+                }
+            } else {
+                if (value > 0 && value > (std::numeric_limits<T>::max() >> shift.value)) {
+                    PANIC("Integer overflow in left shift");
+                }
+                if (value < 0 && value < (std::numeric_limits<T>::min() >> shift.value)) {
+                    PANIC("Integer underflow in left shift");
+                }
+            }
+        }
+        return SafeInt(value << shift.value);
+    }
+    
+    SafeInt operator>>(const SafeInt& shift) const {
+        if (shift.value < 0 || shift.value >= static_cast<T>(sizeof(T) * 8)) {
+            PANIC("Invalid shift amount");
+        }
+        return SafeInt(value >> shift.value);
+    }
+};
+
+using u8 = SafeInt<std::uint8_t>;
+using i8 = SafeInt<std::int8_t>;
+
+using u16 = SafeInt<std::uint16_t>;
+using i16 = SafeInt<std::int16_t>;
+
+using u32 = SafeInt<std::uint32_t>;
+using i32 = SafeInt<std::int32_t>;
+
+using u64 = SafeInt<std::uint64_t>;
+using i64 = SafeInt<std::int64_t>;
+
+using usize = SafeInt<std::size_t>;
+using isize = SafeInt<std::ptrdiff_t>;
+// ==== SafeInt
 
 // defer ====
 template <typename F>
@@ -126,18 +467,15 @@ public:
         (tryConvertEnum<OtherEnums>(other, converted), ...);
     }
 
-    // Check if contains specific error
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
     bool is() const {
         return tag == getTagForType<E>();
     }
     
-    // Check if contains any error
     bool hasError() const {
         return tag != INVALID_TAG;
     }
     
-    // Get error
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
     E get() const {
         if (tag != getTagForType<E>()) {
@@ -146,7 +484,6 @@ public:
         return *reinterpret_cast<const E*>(storage.errorStorage);
     }
     
-    // Check if empty
     bool isEmpty() const {
         return tag == INVALID_TAG;
     }
@@ -156,7 +493,7 @@ public:
 // Result ====
 template <typename T, typename... Enums>
 class Result {
-    private:
+private:
     template <typename D, typename... Ts>
     struct contains_type {
         static constexpr bool value = (std::is_same_v<D, Ts> || ...);
@@ -180,8 +517,11 @@ class Result {
     static constexpr TagType VALUE_TAG = 1;
     
     union Storage {
-        T value;
+        alignas(T) char valueStorage[sizeof(T)];
         char errorStorage[std::max({sizeof(Enums)...})];
+        
+        Storage() {}
+        ~Storage() {}
     } storage;
     
     TagType tag;
@@ -204,11 +544,50 @@ class Result {
             converted = true;
         }
     }
+
+    void cleanup() {
+        if (tag == VALUE_TAG) {
+            reinterpret_cast<T*>(storage.valueStorage)->~T();
+        }
+    }
+
+    void copyFrom(const Result& other) {
+        tag = other.tag;
+        if (tag == VALUE_TAG) {
+            new (storage.valueStorage) T(other.value());
+        } else if (tag > VALUE_TAG) {
+            std::memcpy(storage.errorStorage, other.storage.errorStorage, sizeof(storage.errorStorage));
+        }
+    }
+
+    void moveFrom(Result&& other) {
+        tag = other.tag;
+        if (tag == VALUE_TAG) {
+            new (storage.valueStorage) T(std::move(other.value()));
+        } else if (tag > VALUE_TAG) {
+            std::memcpy(storage.errorStorage, other.storage.errorStorage, sizeof(storage.errorStorage));
+        }
+        other.tag = INVALID_TAG;
+    }
+
 public:
     Result() : tag(INVALID_TAG) {}
     
-    Result(const T value) : tag(VALUE_TAG) {
-        storage.value = value;
+    Result(const T& value) : tag(VALUE_TAG) {
+        new (storage.valueStorage) T(value);
+    }
+    
+    Result(T&& value) : tag(VALUE_TAG) {
+        new (storage.valueStorage) T(std::move(value));
+    }
+    
+    template <typename U, typename = std::enable_if_t<
+        std::is_convertible_v<U, T> && 
+        !std::is_same_v<std::decay_t<U>, T> &&
+        !contains_type<std::decay_t<U>, Enums...>::value
+    >>
+    Result(U&& value) : tag(VALUE_TAG) {
+        new (storage.valueStorage) T(std::forward<U>(value));
     }
     
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
@@ -229,7 +608,7 @@ public:
         
         if (other.hasValue()) {
             tag = VALUE_TAG;
-            storage.value = other.value();
+            new (storage.valueStorage) T(other.value());
             return;
         }
         
@@ -237,39 +616,61 @@ public:
         (tryConvertEnum<OtherEnums>(other, converted), ...);
     }
     
-    // Check if contains value
+    Result(const Result& other) : tag(INVALID_TAG) {
+        copyFrom(other);
+    }
+    
+    Result(Result&& other) noexcept : tag(INVALID_TAG) {
+        moveFrom(std::move(other));
+    }
+    
+    Result& operator=(const Result& other) {
+        if (this != &other) {
+            cleanup();
+            copyFrom(other);
+        }
+        return *this;
+    }
+    
+    Result& operator=(Result&& other) noexcept {
+        if (this != &other) {
+            cleanup();
+            moveFrom(std::move(other));
+        }
+        return *this;
+    }
+    
+    ~Result() {
+        cleanup();
+    }
+    
     bool hasValue() const {
         return tag == VALUE_TAG;
     }
     
-    // Check if contains specific error
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
     bool hasError() const {
         return tag == getTagForType<E>();
     }
     
-    // Check if contains any error
     bool hasAnyError() const {
         return tag > VALUE_TAG;
     }
     
-    // Get value
     T& value() {
         if (tag != VALUE_TAG) {
             PANIC("Result does not contain a value");
         }
-        return storage.value;
+        return *reinterpret_cast<T*>(storage.valueStorage);
     }
     
     const T& value() const {
         if (tag != VALUE_TAG) {
             PANIC("Result does not contain a value");
         }
-        
-        return storage.value;
+        return *reinterpret_cast<const T*>(storage.valueStorage);
     }
     
-    // Get error
     template <typename E, typename = std::enable_if_t<contains_type<E, Enums...>::value>>
     E error() const {
         if (tag != getTagForType<E>()) {
@@ -278,12 +679,10 @@ public:
         return *reinterpret_cast<const E*>(storage.errorStorage);
     }
     
-    // Get value or default
     T valueOr(const T& defaultValue) const {
         return hasValue() ? value() : defaultValue;
     }
     
-    // Check if empty
     bool isEmpty() const {
         return tag == INVALID_TAG;
     }
@@ -650,4 +1049,15 @@ namespace stj {
             return result;
         }
     };
+
+
+    // TODO: made it a macro/a generic
+    void println(const char* str) {
+        std::printf("%s\n", str);
+    }
+    
+    template <typename T, typename... Args>
+    void print(const T& first, const Args&... args) {
+        std::printf(first, args...);
+    }
 }
