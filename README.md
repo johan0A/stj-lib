@@ -25,10 +25,10 @@ enum Err {
 };
 
 Result<i32, Err, MathErr> bar() {
-    auto malloc = stj::heap::c_allocator;
+    auto allocator = stj::heap::c_allocator;
     
-    auto slice = malloc.alloc<i32>(10);
-    defer (free(slice.ptr.raw_ptr));
+    auto slice = allocator.alloc<i32>(10);
+    defer (allocator.free(slice));
 
     for(usize i = 0; i < slice.len; i++) {
         slice[i] = i;
@@ -37,19 +37,19 @@ Result<i32, Err, MathErr> bar() {
     foo(slice.slice(5));
 
     auto list = stj::ArrayList<i32>::init();
-    defer (list.deinit(malloc));
+    defer (list.deinit(allocator));
 
-    list.append(malloc, 12);
-    list.append(malloc, 11);
-    list.append(malloc, 20);
-    list.append(malloc, 20);
-    list.append(malloc, 20);
+    list.append(allocator, 12);
+    list.append(allocator, 11);
+    list.append(allocator, 20);
+    list.append(allocator, 20);
+    list.append(allocator, 20);
     
-    list.pop(malloc);
-    list.pop(malloc);
+    list.pop(allocator);
+    list.pop(allocator);
 
     for(usize i = 0; i < 10000; i++) {
-        list.append(malloc, i);
+        list.append(allocator, i);
     }
 
     foo(list.items);
